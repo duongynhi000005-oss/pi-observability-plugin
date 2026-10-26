@@ -13,6 +13,7 @@ const CONFIG_VARS = [
   "LANGFUSE_USER_ID",
   "LANGFUSE_TRACING_ENVIRONMENT",
   "LANGFUSE_RELEASE",
+  "LANGFUSE_TAGS",
   "LANGFUSE_TRACING_ENABLED",
   "PI_CODING_AGENT_DIR",
 ];
@@ -98,5 +99,33 @@ describe("loadConfig", () => {
     const config = loadConfig();
     assert.equal(config?.userId, undefined);
     assert.equal(config?.environment, undefined);
+  });
+
+  it("defaults tags to ['pi'] when no tags are configured", () => {
+    process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-env";
+    process.env.LANGFUSE_SECRET_KEY = "sk-lf-env";
+    assert.deepEqual(loadConfig()?.tags, ["pi"]);
+  });
+
+  it("merges, trims, deduplicates, and filters config file tags while preserving 'pi'", () => {
+    writeConfigFile({
+      publicKey: "pk-lf-file",
+      secretKey: "sk-lf-file",
+      tags: ["  device:macbook  ", "", "pi", "device:macbook", "x".repeat(201), 42, "env:dev"],
+    });
+    assert.deepEqual(loadConfig()?.tags, ["pi", "device:macbook", "env:dev"]);
+  });
+
+  it("supports LANGFUSE_TAGS env var (comma-separated and JSON array) overriding config file tags", () => {
+    writeConfigFile({
+      publicKey: "pk-lf-file",
+      secretKey: "sk-lf-file",
+      tags: ["from-file"],
+    });
+    process.env.LANGFUSE_TAGS = " device:srv-1 , team:infra , pi ";
+    assert.deepEqual(loadConfig()?.tags, ["pi", "device:srv-1", "team:infra"]);
+
+    process.env.LANGFUSE_TAGS = JSON.stringify(["device:srv-2", "team:core"]);
+    assert.deepEqual(loadConfig()?.tags, ["pi", "device:srv-2", "team:core"]);
   });
 });

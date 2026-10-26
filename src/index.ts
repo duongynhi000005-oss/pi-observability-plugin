@@ -111,6 +111,8 @@ function readParentIds(env: NodeJS.ProcessEnv): ParentIds | undefined {
 // Config
 // ---------------------------------------------------------------------------
 
+const MAX_TAG_CHARS = 200;
+
 export interface LangfuseConfig {
   publicKey: string;
   secretKey: string;
@@ -118,6 +120,36 @@ export interface LangfuseConfig {
   userId?: string;
   environment?: string;
   release?: string;
+  tags: string[];
+}
+
+export function resolveTraceTags(raw: unknown): string[] {
+  let candidates: unknown[] = [];
+  if (Array.isArray(raw)) {
+    candidates = raw;
+  } else if (typeof raw === "string" && raw.trim()) {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        candidates = Array.isArray(parsed) ? parsed : trimmed.split(",");
+      } catch {
+        candidates = trimmed.split(",");
+      }
+    } else {
+      candidates = trimmed.split(",");
+    }
+  }
+  const out = [...BASE_TAGS];
+  const seen = new Set<string>(BASE_TAGS);
+  for (const item of candidates) {
+    if (typeof item !== "string") continue;
+    const tag = item.trim();
+    if (!tag || tag.length > MAX_TAG_CHARS || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
 }
 
 export function loadConfig(): LangfuseConfig | undefined {
@@ -144,6 +176,9 @@ export function loadConfig(): LangfuseConfig | undefined {
     userId: process.env.LANGFUSE_USER_ID?.trim() || asTrimmedString(file.userId),
     environment: process.env.LANGFUSE_TRACING_ENVIRONMENT?.trim() || asTrimmedString(file.environment),
     release: process.env.LANGFUSE_RELEASE?.trim() || asTrimmedString(file.release),
+    tags: resolveTraceTags(
+      process.env.LANGFUSE_TAGS?.trim() ? process.env.LANGFUSE_TAGS : file.tags,
+    ),
   };
 }
 
@@ -854,7 +889,7 @@ export default function (pi: ExtensionAPI) {
           [LangfuseOtelSpanAttributes.TRACE_SESSION_ID]: isSubagent
             ? (inheritedParent!.sessionId ?? sessionId)
             : sessionId,
-          [LangfuseOtelSpanAttributes.TRACE_TAGS]: BASE_TAGS,
+          [LangfuseOtelSpanAttributes.TRACE_TAGS]: config.tags,
           ...(config.userId ? { [LangfuseOtelSpanAttributes.TRACE_USER_ID]: config.userId } : {}),
         };
 
@@ -1135,7 +1170,7 @@ export default function (pi: ExtensionAPI) {
       : {
           ...(inheritedParent ? {} : { [LangfuseOtelSpanAttributes.TRACE_NAME]: `Pi ${name}` }),
           [LangfuseOtelSpanAttributes.TRACE_SESSION_ID]: inheritedParent?.sessionId ?? sessionId,
-          [LangfuseOtelSpanAttributes.TRACE_TAGS]: BASE_TAGS,
+          [LangfuseOtelSpanAttributes.TRACE_TAGS]: config.tags,
           ...(config.userId ? { [LangfuseOtelSpanAttributes.TRACE_USER_ID]: config.userId } : {}),
         };
     const obs = startObservation(
