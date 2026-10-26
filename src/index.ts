@@ -56,7 +56,8 @@ const isUsableSpanId = (v: string | undefined): v is string =>
 
 const TRACEPARENT = /^(?!ff)([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(-.*)?$/;
 
-export function parseTraceparent(value: string): { traceId: string; spanId: string } | undefined {
+export function parseTraceparent(value: string | undefined | null): { traceId: string; spanId: string } | undefined {
+  if (typeof value !== "string") return undefined;
   const match = TRACEPARENT.exec(value.trim().toLowerCase());
   if (!match) return undefined;
   const [, version, traceId, spanId, , trailing] = match;
@@ -429,7 +430,8 @@ export type ChatMlMessage =
     }
   | { role: "tool"; tool_call_id: string; name: string; content: string; is_error?: true };
 
-export function markDataUris(text: string): string {
+export function markDataUris(text: string | undefined | null): string {
+  if (typeof text !== "string") return "";
   return text.replace(
     /data:[^;,]{0,100};base64,[A-Za-z0-9+/]+=*/g,
     (uri) => `[data uri ~${Math.floor((uri.length * 3) / 4 / 1024)}KB]`,
@@ -711,8 +713,9 @@ export default function (pi: ExtensionAPI) {
     return runtime;
   };
 
-  const resolveTurnNumber = (ctx: ExtensionContext, promptText: string): number => {
+  const resolveTurnNumber = (ctx: ExtensionContext, promptText: string | undefined): number => {
     try {
+      const normalizedPrompt = typeof promptText === "string" ? promptText : "";
       const entries = ctx.sessionManager.getEntries() as Array<{
         type?: string;
         message?: { role?: string; content?: unknown };
@@ -723,7 +726,7 @@ export default function (pi: ExtensionAPI) {
       let count = userMessages.length;
       const last = userMessages[userMessages.length - 1];
       // before_agent_start may fire before or after the prompt is appended.
-      if (last && extractText(last.message?.content) !== promptText) count += 1;
+      if (last && extractText(last.message?.content) !== normalizedPrompt) count += 1;
       if (count < 1) count = 1;
       fallbackTurnCounter = count;
       return count;
@@ -841,9 +844,10 @@ export default function (pi: ExtensionAPI) {
     if (state) finalizeRoot({ cancelled: true });
 
     const sessionId = ctx.sessionManager.getSessionId();
-    const turnNumber = resolveTurnNumber(ctx, event.prompt);
+    const promptText = typeof event.prompt === "string" ? event.prompt : "";
+    const turnNumber = resolveTurnNumber(ctx, promptText);
     const promptImages = extractImages(event.images);
-    const userText = [event.prompt, ...promptImages.map(describeImage)].filter(Boolean).join("\n");
+    const userText = [promptText, ...promptImages.map(describeImage)].filter(Boolean).join("\n");
     lastPromptText = userText;
     lastContextHistory = undefined;
     const isSubagent = inheritedParent?.source === "subagent";

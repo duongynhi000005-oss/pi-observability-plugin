@@ -799,3 +799,15 @@ describe("extractThinking", () => {
     assert.equal(parts[0]!.content.length, 120_000);
   });
 });
+
+describe("undefined / non-string input guards", () => {
+  it("markDataUris returns empty string for undefined or null input", () => {
+    assert.equal(markDataUris(undefined), "");
+    assert.equal(markDataUris(null), "");
+  });
+
+  it("parseTraceparent returns undefined for undefined or null input", () => {
+    assert.equal(parseTraceparent(undefined), undefined);
+    assert.equal(parseTraceparent(null), undefined);
+  });
+});
